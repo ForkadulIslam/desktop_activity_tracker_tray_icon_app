@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Activity Tracker</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 20px;
+      width: 100%;
+      height: 100%;
+      background-color: #f0f2f5;
+    }
+
+    .container {
+      position: relative;
+      width: 260px;
+      margin: auto;
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.1);
+      padding: 20px;
+    }
+
+    .close-btn {
+      position: absolute;
+      top: -10px;
+      right: -10px;
+      width: 24px;
+      height: 24px;
+      background: #ff5c5c;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      font-size: 14px;
+      cursor: pointer;
+      padding: 0;
+      margin:0;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    }
+
+    .close-btn:hover {
+      background: #ff1c1c;
+    }
+
+    h3, h4 {
+      margin-top: 0;
+      margin-bottom: 15px;
+      text-align: center;
+    }
+
+    input {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 12px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+
+    .btn-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    button {
+      width: 100%;
+      padding: 8px;
+      border: none;
+      border-radius: 6px;
+      background-color: #007bff;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+    .breakBtn{
+      background-color: #b93927;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+    .breakBtn:hover {
+      background-color: #bd4b3c;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    #status {
+      color: red;
+      font-size: 0.85em;
+      text-align: center;
+      margin-top: 8px;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .logout-link {
+      display: block;
+      text-align: center;
+      margin-top: 30px;
+      font-size: 0.85em;
+      color: #555;
+      text-decoration: underline;
+      background: none;
+      border: none;
+      cursor: pointer;
+    }
+
+    .logout-link:hover {
+      color: #000;
+      background: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <button class="close-btn" onclick="window.close()">✕</button>
+
+    <!-- Login Form -->
+    <div id="login-form">
+      <h3>Login</h3>
+      <input type="text" id="username" placeholder="Username" />
+      <input type="password" id="password" placeholder="Password" />
+      <button id="login-btn">Login</button>
+      <p id="status"></p>
+    </div>
+
+    <!-- Logged-in UI -->
+    <div id="user-info" class="hidden">
+      <h4>Welcome, <span id="display-name"></span></h4>
+      <div class="btn-group">
+        <button id="punch-in-btn" class="hidden">Punch In</button>
+        <button id="punch-out-btn" class="hidden">Punch Out</button>
+        <button id="break-start-btn" class="hidden breakBtn">Start Break</button>
+        <button id="break-end-btn" class="hidden breakBtn">End Break</button>
+      </div>
+      <button class="logout-link" id="logout-btn">Logout</button>
+    </div>
+  </div>
+
+  
+
+ <!-- Include external login script -->
+ <script src="auth.js"></script>
+
+</body>
+</html>
