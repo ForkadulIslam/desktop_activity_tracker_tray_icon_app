@@ -2,7 +2,8 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Activity Tracker</title>
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' http://3.109.202.213; style-src 'self' 'unsafe-inline'; script-src 'self'">
+  <title>Techvenger Activity Tracker</title>
   <style>
     * {
       box-sizing: border-box;
@@ -126,7 +127,7 @@
 </head>
 <body>
   <div class="container">
-    <button class="close-btn" onclick="window.close()">✕</button>
+    <button class="close-btn" id="action-button-close">✕</button>
 
     <!-- Login Form -->
     <div id="login-form">

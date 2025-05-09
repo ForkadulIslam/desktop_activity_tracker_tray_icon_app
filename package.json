@@ -8,8 +8,10 @@
     "dist": "electron-builder"
   },
   "dependencies": {
+    "ably": "^2.8.0",
     "auto-launch": "^5.0.5",
     "dotenv": "^16.0.0",
+    "electron-updater": "^6.6.2",
     "node-fetch": "^3.3.2",
     "screenshot-desktop": "^1.14.0"
   },
@@ -26,6 +28,13 @@
     ],
     "win": {
       "target": "portable"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "ForkadulIslam",
+        "repo": "https://github.com/ForkadulIslam/desktop_activity_tracker_tray_icon_app"
+      }
+    ]
   }
 }

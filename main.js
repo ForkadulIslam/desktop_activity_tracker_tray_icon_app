@@ -5,7 +5,9 @@ const {
   powerMonitor,
   BrowserWindow,
   ipcMain,
+  dialog,
 } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const screenshot = require('screenshot-desktop');
 const AutoLaunch = require('auto-launch');
@@ -13,6 +15,7 @@ const fs = require('fs');
 require('dotenv').config({
   path: path.join(__dirname, '.env')
 });
+const { initPresence, leavePresence } = require('./ably');
 
 let tray = null;
 let loginWindow = null;
@@ -71,11 +74,31 @@ function createLoginWindow() {
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
-      contextIsolation: true
+      contextIsolation: true,
+      webSecurity: true,
     }
   });
 
+  
+
   loginWindow.loadFile('auth.html');
+
+  
+  // Set CSP headers
+  loginWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Content-Security-Policy': [
+          "default-src 'self'; " +
+          "connect-src 'self' http://3.109.202.213; " +
+          "style-src 'self' 'unsafe-inline'; " +
+          "script-src 'self'"
+        ]
+      }
+    });
+  });
+
   //loginWindow.webContents.openDevTools();
 
   loginWindow.on('close', (e) => {
@@ -171,6 +194,7 @@ ipcMain.on('login-success', (event, { userId, name }) => {
   currentUserId = userId;
   currentUserName = name;
   saveSession(userId, name);
+  initPresence(userId);
   console.log(`✅ Logged in as ${name} [${userId}]`);
   if (loginWindow) loginWindow.hide();
 });
@@ -180,6 +204,7 @@ ipcMain.on('logout', () => {
   clearSession();
   currentUserId = null;
   currentUserName = null;
+  leavePresence();
 });
 
 ipcMain.handle('get-session', () => {
@@ -209,7 +234,19 @@ app.whenReady().then(() => {
   if (savedSession) {
     currentUserId = savedSession.userId;
     currentUserName = savedSession.name;
-    console.log(`🔁 Restored session for ${currentUserName} [${currentUserId}]`);
+    try {
+      initPresence(savedSession.userId);
+      console.log(`🔁 Restored session for ${currentUserName} [${currentUserId}]`);
+    } catch (err) {
+      console.error('❌ Failed to initialize presence for restored session:', err);
+      // Optional: Clear invalid session
+      clearSession();
+      currentUserId = null;
+      currentUserName = null;
+      clearSession();
+      leavePresence();
+    }
+
   }
 
   createLoginWindow();
@@ -228,8 +265,29 @@ app.whenReady().then(() => {
     }
   });
   backgroundWindow.loadURL('https://trends.google.com/tv/');
+
+  //Updater
+  autoUpdater.on('update-downloaded', () => {
+    log('✅ Update downloaded.');
+    const response = dialog.showMessageBoxSync({
+      type: 'info',
+      buttons: ['Restart Now', 'Later'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'Update Ready',
+      message: 'A new version has been downloaded.',
+      detail: 'Would you like to restart the app now to install the update?'
+    });
+    if (response === 0) {
+      autoUpdater.quitAndInstall();
+    } else {
+      log('🕓 User chose to install later.');
+    }
+  });
+
 });
 
 app.on('window-all-closed', (e) => {
   e.preventDefault(); // prevent quitting
 });
+

@@ -14,6 +14,8 @@ const punchInBtn = document.getElementById('punch-in-btn');
 const punchOutBtn = document.getElementById('punch-out-btn');
 const breakStartBtn = document.getElementById('break-start-btn');
 const breakEndBtn = document.getElementById('break-end-btn');
+const closeButton = document.getElementById('action-button-close');
+
 let currentStatus = {
   punchedIn: false,
   onBreak: false,
@@ -143,6 +145,12 @@ breakEndBtn.addEventListener('click', async () => {
     console.error('Break end failed:', err);
   }
 });
+
+closeButton.addEventListener('click', () => {
+  window.close(); // or send a message to main process via IPC
+});
+
+
 
 
 
