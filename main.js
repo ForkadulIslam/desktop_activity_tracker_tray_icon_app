@@ -65,8 +65,8 @@ function createLoginWindow() {
   }
 
   loginWindow = new BrowserWindow({
-    width: 300,
-    height: 300,
+    width: 500,
+    height: 500,
     resizable: false,
     frame: false,
     alwaysOnTop: true,
@@ -85,21 +85,21 @@ function createLoginWindow() {
 
   
   // Set CSP headers
-  loginWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-    callback({
-      responseHeaders: {
-        ...details.responseHeaders,
-        'Content-Security-Policy': [
-          "default-src 'self'; " +
-          "connect-src 'self' http://3.109.202.213; " +
-          "style-src 'self' 'unsafe-inline'; " +
-          "script-src 'self'"
-        ]
-      }
-    });
-  });
+  // loginWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+  //   callback({
+  //     responseHeaders: {
+  //       ...details.responseHeaders,
+  //       'Content-Security-Policy': [
+  //         "default-src 'self'; " +
+  //         "connect-src 'self' http://3.109.202.213; " +
+  //         "style-src 'self' 'unsafe-inline'; " +
+  //         "script-src 'self'"
+  //       ]
+  //     }
+  //   });
+  // });
 
-  //loginWindow.webContents.openDevTools();
+  loginWindow.webContents.openDevTools();
 
   loginWindow.on('close', (e) => {
     e.preventDefault();
@@ -284,10 +284,10 @@ app.whenReady().then(() => {
       log('🕓 User chose to install later.');
     }
   });
+  autoUpdater.checkForUpdatesAndNotify();
 
 });
 
 app.on('window-all-closed', (e) => {
   e.preventDefault(); // prevent quitting
 });
-
