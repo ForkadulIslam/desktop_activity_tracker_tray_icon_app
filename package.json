@@ -1,11 +1,13 @@
 {
   "name": "techvengers-activity-tracker",
   "version": "1.0.0",
-  "description": "Electron-based desktop activity tracker",
+  "description": "A desktop activity tracker app with screenshot capture and break tracking.",
+  "author": "Forkadul Islam <forkadulislam@gmail.com>",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder"
+    "dist": "electron-builder",
+    "postinstall": "electron-builder install-app-deps"
   },
   "dependencies": {
     "ably": "^2.8.0",
@@ -27,14 +29,21 @@
       ".env"
     ],
     "win": {
-      "target": "portable"
-    },
-    "publish": [
-      {
+      "target": "nsis",
+      "icon": "appIcon.png",
+      "publish": {
         "provider": "github",
         "owner": "ForkadulIslam",
         "repo": "desktop_activity_tracker_tray_icon_app"
       }
-    ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }
