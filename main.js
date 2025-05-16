@@ -325,7 +325,7 @@ app.whenReady().then(() => {
     log('✅ Update downloaded.');
     const response = dialog.showMessageBoxSync({
       type: 'info',
-      buttons: ['Restart Now', 'Later'],
+      buttons: ['Update Now', 'Later'],
       defaultId: 0,
       cancelId: 1,
       title: 'Update Ready',
