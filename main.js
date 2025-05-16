@@ -17,6 +17,16 @@ require('dotenv').config({
 });
 const { initPresence, leavePresence } = require('./ably');
 
+// Ensure proper installation path
+if (process.env.PORTABLE_EXECUTABLE_DIR) {
+  // Running from temp folder - warn user
+  require('electron').dialog.showErrorBox(
+    'Installation Error',
+    'Please properly install the application instead of running from temporary location.'
+  );
+  app.quit();
+}
+
 let tray = null;
 let loginWindow = null;
 let isOnBreak = false;
@@ -65,8 +75,8 @@ function createLoginWindow() {
   }
 
   loginWindow = new BrowserWindow({
-    width: 500,
-    height: 500,
+    width: 400,
+    height: 400,
     resizable: false,
     frame: false,
     alwaysOnTop: true,
@@ -83,23 +93,7 @@ function createLoginWindow() {
 
   loginWindow.loadFile('auth.html');
 
-  
-  // Set CSP headers
-  // loginWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
-  //   callback({
-  //     responseHeaders: {
-  //       ...details.responseHeaders,
-  //       'Content-Security-Policy': [
-  //         "default-src 'self'; " +
-  //         "connect-src 'self' http://3.109.202.213; " +
-  //         "style-src 'self' 'unsafe-inline'; " +
-  //         "script-src 'self'"
-  //       ]
-  //     }
-  //   });
-  // });
-
-  loginWindow.webContents.openDevTools();
+  //loginWindow.webContents.openDevTools();
 
   loginWindow.on('close', (e) => {
     e.preventDefault();
@@ -220,41 +214,96 @@ ipcMain.handle('get-session', () => {
 
 
 app.whenReady().then(() => {
+  // Tray and other UI setup
   tray = new Tray(path.join(__dirname, 'tray.png'));
   tray.setToolTip('Activity Tracker');
-
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Login Window', click: toggleLoginWindow },
     { label: 'Quit', click: () => app.quit() }
   ]));
-
   tray.on('click', toggleLoginWindow);
 
+  // Windows-specific setup
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('Techvenger Activity Tracker');
+  }
+
+  // Improved auto-launch
+  const appLauncher = new AutoLaunch({
+    name: 'Techvenger Activity Tracker',
+    path: app.getPath('exe'), // Gets the correct installed path
+    isHidden: true
+  });
+
+  // Remove any existing broken entries
+  appLauncher.disable()
+    .then(() => {
+      // Create new correct entry
+      return appLauncher.enable();
+    })
+    .then(() => {
+      console.log('✅ Auto-start configured correctly');
+      // Verify the registry entry
+      verifyAutoStart();
+    })
+    .catch(err => {
+      console.error('Auto-start error:', err);
+      showManualInstallInstructions();
+    });
+
+    function verifyAutoStart() {
+      const regedit = require('regedit');
+      const key = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run';
+      
+      regedit.list(key, (err, result) => {
+        if (!err) {
+          console.log('Current auto-start entries:', result[key].values);
+        }
+      });
+    }
+
+    function showManualInstallInstructions() {
+      const { dialog } = require('electron');
+      dialog.showMessageBox({
+        type: 'info',
+        buttons: ['OK'],
+        title: 'Installation Required',
+        message: 'For auto-start to work:',
+        detail: '1. Please install the application properly\n' +
+                '2. Don\'t run from temporary location\n' +
+                '3. Reinstall using the setup installer'
+      });
+    }
+
+  // Network-aware session restore
   const savedSession = loadSession();
   if (savedSession) {
     currentUserId = savedSession.userId;
     currentUserName = savedSession.name;
-    try {
-      initPresence(savedSession.userId);
-      console.log(`🔁 Restored session for ${currentUserName} [${currentUserId}]`);
-    } catch (err) {
-      console.error('❌ Failed to initialize presence for restored session:', err);
-      // Optional: Clear invalid session
-      clearSession();
-      currentUserId = null;
-      currentUserName = null;
-      clearSession();
-      leavePresence();
-    }
-
+    
+    const tryInitPresence = () => {
+      require('dns').resolve('www.google.com', (err) => {
+        if (!err) {
+          try {
+            initPresence(savedSession.userId);
+            log(`Restored session for ${currentUserName}`);
+          } catch (err) {
+            log('Presence init failed:', err);
+          }
+        } else {
+          setTimeout(tryInitPresence, 5000);
+        }
+      });
+    };
+    
+    tryInitPresence();
   }
 
+  // Start monitoring
   createLoginWindow();
   monitorActivity();
 
-  const autoLauncher = new AutoLaunch({ name: 'Techvenger Activity Tracker' });
-  autoLauncher.enable().catch(console.error);
-
+  // Other listeners
   powerMonitor.on('suspend', () => sendToServer('sleep'));
   powerMonitor.on('resume', () => sendToServer('resume'));
 
@@ -267,6 +316,11 @@ app.whenReady().then(() => {
   backgroundWindow.loadURL('https://trends.google.com/tv/');
 
   //Updater
+  autoUpdater.on('checking-for-update', () => log('🔄 Checking for update...'));
+  autoUpdater.on('update-available', (info) => log('📦 Update available:', info));
+  autoUpdater.on('update-not-available', (info) => log('✅ No updates available:', info));
+  autoUpdater.on('error', (err) => log('❌ Update error:', err));
+  autoUpdater.on('download-progress', (progress) => log(`⬇️ Downloading: ${Math.round(progress.percent)}%`));
   autoUpdater.on('update-downloaded', () => {
     log('✅ Update downloaded.');
     const response = dialog.showMessageBoxSync({
