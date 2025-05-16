@@ -77,7 +77,7 @@ function createLoginWindow() {
   loginWindow = new BrowserWindow({
     width: 300,
     height: 300,
-    resizable: false,
+    resizable: true,
     frame: false,
     alwaysOnTop: true,
     skipTaskbar: true,
@@ -207,6 +207,10 @@ ipcMain.handle('get-session', () => {
     name: currentUserName
   };
 });
+// Expose the version to renderer
+ipcMain.handle('get-app-version', () => {
+  return app.getVersion();
+});
 
 
 
@@ -219,7 +223,7 @@ app.whenReady().then(() => {
   tray.setToolTip('Activity Tracker');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Login Window', click: toggleLoginWindow },
-    { label: 'Quit', click: () => app.quit() }
+    //{ label: 'Quit', click: () => app.quit() }
   ]));
   tray.on('click', toggleLoginWindow);
 

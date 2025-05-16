@@ -33,6 +33,20 @@ async function safeFetch(url, options) {
     throw err;
   }
 }
+
+async function getUserStatus(session) {
+  try{
+    const response = await safeFetch(`${SERVER_URL}/userStatus?user_id=${session.userId}`);
+    currentStatus = {
+      punchedIn: response.data.punchedIn,
+      onBreak: response.data.onBreak,
+    };
+    return currentStatus;
+  }catch(e){
+    console.error(`Error in getUserStatus request`, e);
+  }
+}
+
 //User Punch status
 (async () => {
   const session = await window.electronAPI.getSession();
@@ -40,19 +54,13 @@ async function safeFetch(url, options) {
     displayName.textContent = session.name;
     loginForm.classList.add('hidden');
     userInfo.classList.remove('hidden');
-
-    try {
-      const response = await safeFetch(`${SERVER_URL}/userStatus?user_id=${session.userId}`);
-      currentStatus = {
-        punchedIn: response.data.punchedIn,
-        onBreak: response.data.onBreak,
-      };
-    } catch (e) {
-      currentStatus = { punchedIn: false, onBreak: false };
-    }
-
+    await getUserStatus(session);
     updateButtonStates();
   }
+  window.electronAPI.getAppVersion().then(version => {
+    document.getElementById('version').textContent = `v ${version}`;
+  });
+
 })();
 
 punchInBtn.addEventListener('click', async () => {
@@ -68,7 +76,6 @@ punchInBtn.addEventListener('click', async () => {
         'user-id': session.userId,
       },
     });
-    console.log(response);
     if (response.success) {
       currentStatus.punchedIn = true;
       currentStatus.onBreak = false; // Reset break status
@@ -150,21 +157,49 @@ closeButton.addEventListener('click', () => {
   window.close(); // or send a message to main process via IPC
 });
 
+loginBtn.addEventListener('click', async () => {
+  
+  const username = usernameInput.value.trim();
+  const password = passwordInput.value;
 
+  status.textContent = '';
 
+  if (!username || !password) {
+    status.textContent = 'Username and password are required.';
+    return;
+  }
 
+  loginBtn.disabled = true;
 
+  try {
+    const response = await fetch(`${SERVER_URL}/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
 
-// User Auth session
-(async () => {
-    const session = await window.electronAPI.getSession();
-    if (session?.userId && session?.name) {
-      displayName.textContent = session.name;
-      loginForm.classList.add('hidden');
-      userInfo.classList.remove('hidden');
-      updateButtonStates(session);
+    const data = await response.json(); 
+    if (response.ok && data.success) {
+      let sessionData = { userId: data.user_id, name: data.name };
+      window.electronAPI.sendLoginSuccess(sessionData);
+      await getUserStatus(sessionData);
+      showLoggedInUI(data.name);
+    } else {
+      status.textContent = data.message || 'Login failed';
     }
-})();
+    loginBtn.disabled = false;
+  } catch (error) {
+    console.error('Login error:', error);
+    status.textContent = 'An error occurred. Please try again later.';
+    loginBtn.disabled = false;
+  }
+});
+
+logoutBtn.addEventListener('click', () => {
+  status.textContent = '';
+  window.electronAPI.sendLogout();
+  showLoginForm();
+});
 
 
 
@@ -205,45 +240,3 @@ closeButton.addEventListener('click', () => {
       }
     }
   }
-
-loginBtn.addEventListener('click', async () => {
-  
-  const username = usernameInput.value.trim();
-  const password = passwordInput.value;
-
-  status.textContent = '';
-
-  if (!username || !password) {
-    status.textContent = 'Username and password are required.';
-    return;
-  }
-
-  loginBtn.disabled = true;
-
-  try {
-    console.log(`${SERVER_URL}/login`);
-    const response = await fetch(`${SERVER_URL}/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
-    });
-
-    const data = await response.json(); 
-    console.log(data);
-    if (response.ok && data.success) {
-      window.electronAPI.sendLoginSuccess({ userId: data.user_id, name: data.name });
-      showLoggedInUI(data.name);
-    } else {
-      status.textContent = data.message || 'Login failed';
-    }
-  } catch (error) {
-    console.error('Login error:', error);
-    status.textContent = 'An error occurred. Please try again later.';
-  }
-  loginBtn.disabled = false;
-});
-
-logoutBtn.addEventListener('click', () => {
-  window.electronAPI.sendLogout();
-  showLoginForm();
-});
