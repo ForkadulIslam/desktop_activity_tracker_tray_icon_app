@@ -75,8 +75,8 @@ function createLoginWindow() {
   }
 
   loginWindow = new BrowserWindow({
-    width: 400,
-    height: 400,
+    width: 300,
+    height: 300,
     resizable: false,
     frame: false,
     alwaysOnTop: true,
