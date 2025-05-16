@@ -1,5 +1,6 @@
 {
-  "name": "techvengers-activity-tracker",
+  "name": "techvengers",
+  "productName": "Techvengers",
   "version": "1.0.3",
   "description": "A desktop activity tracker app with screenshot capture and break tracking.",
   "author": "Forkadul Islam <forkadulislam@gmail.com>",
@@ -23,8 +24,8 @@
     "electron-builder": "^26.0.12"
   },
   "build": {
-    "appId": "com.techvengers.activitytracker",
-    "productName": "Techvenger Activity Tracker",
+    "appId": "com.techvengers.app",
+    "productName": "Techvengers",
     "files": [
       "**/*",
       ".env"
