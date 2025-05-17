@@ -8,5 +8,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppVersion: () => ipcRenderer.invoke('get-app-version')
 });
 contextBridge.exposeInMainWorld('env', {
-  SERVER_URL: 'http://3.109.202.213/api' // Replace this with actual value or inject from main.js
+  SERVER_URL: 'http://3.109.202.213/api'
 });
