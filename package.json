@@ -13,11 +13,16 @@
   "dependencies": {
     "ably": "^2.8.0",
     "auto-launch": "^5.0.5",
+    "cloudinary": "^2.6.1",
     "dotenv": "^16.0.0",
     "electron-updater": "^6.6.2",
+    "fs": "^0.0.1-security",
     "node-fetch": "^3.3.2",
+    "os": "^0.1.2",
+    "path": "^0.12.7",
     "regedit": "^5.1.4",
-    "screenshot-desktop": "^1.14.0"
+    "screenshot-desktop": "^1.15.1",
+    "sharp": "^0.34.1"
   },
   "devDependencies": {
     "electron": "^36.0.1",

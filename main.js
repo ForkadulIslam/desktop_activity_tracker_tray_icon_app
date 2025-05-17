@@ -12,10 +12,19 @@ const path = require('path');
 const screenshot = require('screenshot-desktop');
 const AutoLaunch = require('auto-launch');
 const fs = require('fs');
+const sharp = require('sharp');
+
 require('dotenv').config({
   path: path.join(__dirname, '.env')
 });
 const { initPresence, leavePresence } = require('./ably');
+
+const cloudinary = require('cloudinary').v2;
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD,
+  api_key: process.env.CLOUDINARY_KEY,
+  api_secret: process.env.CLOUDINARY_SECRET
+});
 
 // Ensure proper installation path
 if (process.env.PORTABLE_EXECUTABLE_DIR) {
@@ -43,6 +52,10 @@ const log = (...args) => {
   logFile.write(line);
   console.log(...args);
 };
+
+/* ─── Screenshot Upload Queue path helpers ────────────────────────────────────────────────────── */
+const queueDir = path.join(app.getPath('userData'), 'screenshot-queue');
+if (!fs.existsSync(queueDir)) fs.mkdirSync(queueDir, { recursive: true });
 
 // Session persistence
 function saveSession(userId, name) {
@@ -144,16 +157,84 @@ async function sendToServer(endpoint) {
 
 async function takeScreenshot() {
   try {
-    const img = await screenshot();
-    // Upload logic if needed
-  } catch (err) {
-    console.error('❌ Screenshot error:', err.message);
+    const imgBuf = await screenshot({ format: 'png' });
+    const buf = await sharp(imgBuf)
+      .resize({ width: 1280 })
+      .jpeg({ quality: 70, chromaSubsampling: '4:4:4', mozjpeg: true })
+      .toBuffer();
+
+    const fileName = `scr_${Date.now()}.jpg`;
+    const uploaded = await tryUploadToCloudinary(buf, fileName);
+
+    if (!uploaded) {
+      const filePath = path.join(queueDir, fileName);
+      fs.writeFileSync(filePath, buf);
+      console.log('📦 Stored for retry:', fileName);
+    }
+
+  } catch (e) {
+    console.error('❌ Screenshot capture error:', e);
+  }
+
+  retryQueuedScreenshots();
+  
+}
+
+function tryUploadToCloudinary(buffer, publicId) {
+  return new Promise((resolve, reject) => {
+    const uploadStream = cloudinary.uploader.upload_stream(
+      {
+        resource_type: 'image',
+        folder: 'screenshots',
+        public_id: publicId.replace('.jpg', ''),
+        transformation: [{ quality: 'auto' }],
+        tags: ['auto-delete'],
+        context: {
+          user_id: currentUserId,
+          timestamp: Date.now() 
+        }
+      },
+      (err, result) => {
+        if (err) {
+          console.warn('⚠️ Cloudinary upload error:', err.message);
+          resolve(false);
+        } else {
+          console.log('✅ Uploaded to Cloudinary:', result.secure_url);
+          resolve(true);
+        }
+      }
+    );
+
+    // Pipe buffer into the Cloudinary stream
+    const stream = require('stream');
+    const bufferStream = new stream.PassThrough();
+    bufferStream.end(buffer);
+    bufferStream.pipe(uploadStream);
+  });
+}
+
+async function retryQueuedScreenshots() {
+  const files = fs.readdirSync(queueDir);
+  if (!files.length) return;
+
+  for (const file of files) {
+    const filePath = path.join(queueDir, file);
+    const buf = fs.readFileSync(filePath);
+
+    const ok = await tryUploadToCloudinary(buf, file);
+    if (ok) {
+      fs.unlinkSync(filePath);
+      console.log('🧹 Removed from queue:', file);
+    } else {
+      break; // stop retrying if one fails (to avoid hammering)
+    }
   }
 }
 
+
 function monitorActivity() {
   setInterval(async () => {
-    console.log(`🧪 Idle threshold: ${parseInt(process.env.IDLE_THRESHOLD)}`);
+    //console.log(`🧪 Idle threshold: ${parseInt(process.env.IDLE_THRESHOLD)}`);
     log(`🧪 Idle threshold: ${parseInt(process.env.IDLE_THRESHOLD)}`);
     if (!currentUserId) return;
 
@@ -172,7 +253,6 @@ function monitorActivity() {
         isOnBreak = false;
       }
     }
-
     if (now - lastScreenshot > parseInt(process.env.SCREENSHOT_INTERVAL)) {
       await takeScreenshot();
       lastScreenshot = now;
@@ -261,7 +341,7 @@ app.whenReady().then(() => {
       
       regedit.list(key, (err, result) => {
         if (!err) {
-          console.log('Current auto-start entries:', result[key].values);
+          //console.log('Current auto-start entries:', result[key].values);
         }
       });
     }
@@ -334,7 +414,7 @@ app.whenReady().then(() => {
       cancelId: 1,
       title: 'Update Ready',
       message: 'A new version has been downloaded.',
-      detail: 'Would you like to restart the app now to install the update?'
+      detail: 'Would you like to install the update?'
     });
     if (response === 0) {
       autoUpdater.quitAndInstall();
@@ -343,6 +423,8 @@ app.whenReady().then(() => {
     }
   });
   autoUpdater.checkForUpdatesAndNotify();
+
+  retryQueuedScreenshots();
 
 });
 
