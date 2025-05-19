@@ -1,7 +1,7 @@
 {
   "name": "techvengers",
   "productName": "Techvengers",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "A desktop activity tracker app with screenshot capture and break tracking.",
   "author": "Forkadul Islam <forkadulislam@gmail.com>",
   "main": "main.js",
