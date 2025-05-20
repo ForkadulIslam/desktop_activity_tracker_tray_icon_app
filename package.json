@@ -1,7 +1,7 @@
 {
   "name": "techvengers",
   "productName": "Techvengers",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "A desktop activity tracker app with screenshot capture and break tracking.",
   "author": "Forkadul Islam <forkadulislam@gmail.com>",
   "main": "main.js",
@@ -34,6 +34,9 @@
     "files": [
       "**/*",
       ".env"
+    ],
+    "asarUnpack": [
+      "node_modules/screenshot-desktop/**"
     ],
     "win": {
       "target": "nsis",

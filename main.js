@@ -156,12 +156,16 @@ async function sendToServer(endpoint) {
 }
 
 async function takeScreenshot() {
+  log('📸 Taking screenshot...');
   try {
     const imgBuf = await screenshot({ format: 'png' });
+    log('✅ Screenshot captured. Size:', imgBuf.length);
+
     const buf = await sharp(imgBuf)
       .resize({ width: 1280 })
       .jpeg({ quality: 70, chromaSubsampling: '4:4:4', mozjpeg: true })
       .toBuffer();
+    log('✅ Screenshot compressed. Size:', buf.length);
 
     const fileName = `scr_${Date.now()}.jpg`;
     const uploaded = await tryUploadToCloudinary(buf, fileName);
@@ -169,15 +173,14 @@ async function takeScreenshot() {
     if (!uploaded) {
       const filePath = path.join(queueDir, fileName);
       fs.writeFileSync(filePath, buf);
-      console.log('📦 Stored for retry:', fileName);
+      log('📦 Stored for retry:', fileName);
     }
 
   } catch (e) {
-    console.error('❌ Screenshot capture error:', e);
+    log('❌ Screenshot capture error:', e.message);
   }
 
   retryQueuedScreenshots();
-  
 }
 
 function tryUploadToCloudinary(buffer, publicId) {
