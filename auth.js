@@ -10,10 +10,7 @@ const logoutBtn = document.getElementById('logout-btn');
 const displayName = document.getElementById('display-name');
 
 
-const punchInBtn = document.getElementById('punch-in-btn');
-const punchOutBtn = document.getElementById('punch-out-btn');
-const breakStartBtn = document.getElementById('break-start-btn');
-const breakEndBtn = document.getElementById('break-end-btn');
+
 const closeButton = document.getElementById('action-button-close');
 
 let currentStatus = {
@@ -55,7 +52,6 @@ async function getUserStatus(session) {
     loginForm.classList.add('hidden');
     userInfo.classList.remove('hidden');
     await getUserStatus(session);
-    updateButtonStates();
   }
   window.electronAPI.getAppVersion().then(version => {
     document.getElementById('version').textContent = `v ${version}`;
@@ -63,95 +59,7 @@ async function getUserStatus(session) {
 
 })();
 
-punchInBtn.addEventListener('click', async () => {
-  //console.log('Punch in click');
-  const session = await window.electronAPI.getSession();
-  if (!session?.userId) return;
 
-  try {
-    const response = await safeFetch(`${SERVER_URL}/punch-in`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'user-id': session.userId,
-      },
-    });
-    if (response.success) {
-      currentStatus.punchedIn = true;
-      currentStatus.onBreak = false; // Reset break status
-      updateButtonStates();
-      status.textContent = 'Successfully punched in.';
-    }
-  } catch (err) {
-    console.error('Punch In Error:', err);
-  }
-
-});
-punchOutBtn.addEventListener('click', async () => {
-  
-  const session = await window.electronAPI.getSession();
-  if (!session?.userId) return;
-
-  try {
-    const response = await safeFetch(`${SERVER_URL}/punch-out`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'user-id': session.userId,
-      },
-    });
-    if (response.success) {
-      currentStatus.punchedIn = false;
-      currentStatus.onBreak = false;
-      updateButtonStates();
-      status.textContent = 'Successfully punched out.';
-    }
-  } catch (err) {
-    console.error('Punch Out Error:', err);
-  }
-
-});
-breakStartBtn.addEventListener('click', async () => {
-  const session = await window.electronAPI.getSession();
-  if (!session?.userId) return;
-
-  try {
-    const response = await safeFetch(`${SERVER_URL}/break-start`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'user-id': session.userId,
-      },
-    });
-
-    status.textContent = response.message || 'Break started successfully.';
-    currentStatus.onBreak = true;
-    updateButtonStates();
-  } catch (err) {
-    console.error('Break start failed:', err);
-  }
-});
-
-breakEndBtn.addEventListener('click', async () => {
-  const session = await window.electronAPI.getSession();
-  if (!session?.userId) return;
-
-  try {
-    const response = await safeFetch(`${SERVER_URL}/break-end`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'user-id': session.userId,
-      },
-    });
-
-    status.textContent = response.message || 'Break ended successfully.';
-    currentStatus.onBreak = false;
-    updateButtonStates();
-  } catch (err) {
-    console.error('Break end failed:', err);
-  }
-});
 
 closeButton.addEventListener('click', () => {
   window.close(); // or send a message to main process via IPC
@@ -209,7 +117,6 @@ logoutBtn.addEventListener('click', () => {
     displayName.textContent = name;
     loginForm.classList.add('hidden');
     userInfo.classList.remove('hidden');
-    updateButtonStates({}); // Optional: pass user punch status later
   }
   
   function showLoginForm() {
@@ -220,23 +127,4 @@ logoutBtn.addEventListener('click', () => {
   }
   
 
-  function updateButtonStates() {
-    if (!currentStatus.punchedIn) {
-      punchInBtn.classList.remove('hidden');
-      punchOutBtn.classList.add('hidden');
-      breakStartBtn.classList.add('hidden');
-      breakEndBtn.classList.add('hidden');
-    } else {
-      punchInBtn.classList.add('hidden');
-      punchOutBtn.classList.remove('hidden');
   
-      if (!currentStatus.onBreak) {
-        breakStartBtn.classList.remove('hidden');
-        breakEndBtn.classList.add('hidden');
-      } else {
-        punchOutBtn.classList.add('hidden');
-        breakStartBtn.classList.add('hidden');
-        breakEndBtn.classList.remove('hidden');
-      }
-    }
-  }

@@ -99,7 +99,26 @@ function leavePresence() {
   }
 }
 
+// Update presence data with the new status
+async function publishStatusUpdate(status) {
+  if (!presenceChannel || !client || client.connection.state !== 'connected') {
+    console.warn(`⚠️ Ably not ready, cannot update presence status: ${status}`);
+    return;
+  }
+
+  try {
+    
+    // Update the presence data for the current user
+    await presenceChannel.presence.update({ status });
+    console.log(`📢 Updated presence status to: ${status}`);
+  } catch (err) {
+    console.error(`❌ Failed to update presence status:`, err);
+  }
+}
+
 module.exports = {
   initPresence,
-  leavePresence
+  leavePresence,
+  publishStatusUpdate
 };
+
