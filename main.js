@@ -6,6 +6,7 @@ const {
   BrowserWindow,
   ipcMain,
   dialog,
+  net
 } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
@@ -17,7 +18,7 @@ const sharp = require('sharp');
 require('dotenv').config({
   path: path.join(__dirname, '.env')
 });
-const { initPresence, leavePresence } = require('./ably');
+const { initPresence, leavePresence, publishStatusUpdate } = require('./ably');
 
 const cloudinary = require('cloudinary').v2;
 cloudinary.config({
@@ -43,6 +44,11 @@ let lastScreenshot = 0;
 let currentUserId = null;
 let currentUserName = null;
 
+let isProcessingQueue = false;
+let lastQueueProcessTime = 0;
+const QUEUE_PROCESS_INTERVAL = 60000; // 1 minute
+const MIN_PROCESS_INTERVAL = 30000; // 30 seconds minimum between runs
+
 const SESSION_FILE = path.join(app.getPath('userData'), 'session.json');
 const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
 
@@ -56,6 +62,207 @@ const log = (...args) => {
 /* ─── Screenshot Upload Queue path helpers ────────────────────────────────────────────────────── */
 const queueDir = path.join(app.getPath('userData'), 'screenshot-queue');
 if (!fs.existsSync(queueDir)) fs.mkdirSync(queueDir, { recursive: true });
+
+/* ─── Offline Queue helpers form Idle time request ────────────────────────────────────────────────────── */
+class IdleTimeQueue {
+  constructor() {
+    this.queuePath = path.join(app.getPath('userData'), 'idle-time-queue.json');
+    this.currentSession = null;
+    this.queue = this.loadQueue();
+  }
+
+  loadQueue() {
+    try {
+      return fs.existsSync(this.queuePath) ? 
+        JSON.parse(fs.readFileSync(this.queuePath)) : [];
+    } catch (e) {
+      console.error('Error loading queue:', e);
+      return [];
+    }
+  }
+
+  saveQueue() {
+    try {
+      fs.writeFileSync(this.queuePath, JSON.stringify(this.queue));
+    } catch (e) {
+      console.error('Error saving queue:', e);
+    }
+  }
+
+  startNewSession(startTime) {
+    this.currentSession = {
+      timeStart: startTime,
+      pending: true
+    };
+  }
+
+  completeSession(endTime, idleSeconds) {
+    if (!this.currentSession) return;
+    
+    const session = {
+      ...this.currentSession,
+      timeEnd: endTime,
+      totalIdleTime: idleSeconds,
+      localTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+      pending: false
+    };
+    
+    this.queue.push(session);
+    this.saveQueue();
+    this.currentSession = null;
+  }
+
+  async processQueue() {
+    if (this.queue.length === 0) return;
+
+    const successItems = [];
+    const remainingItems = [];
+    
+    for (const item of this.queue) {
+      try {
+        const result = await this.sendSession(item);
+        if (result.success) {
+          successItems.push(item);
+        } else {
+          remainingItems.push(item);
+        }
+      } catch (err) {
+        remainingItems.push(item);
+        break; // Stop on first error
+      }
+    }
+
+    if (successItems.length > 0) {
+      this.queue = remainingItems;
+      this.saveQueue();
+      console.log(`✅ Sent ${successItems.length} queued idle sessions`);
+    }
+  }
+
+  async sendSession(session) {
+    const options = {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'user-id': currentUserId
+      },
+      body: JSON.stringify({
+        totalIdleTime: session.totalIdleTime,
+        timeStart: formatLocalForServer(new Date(session.timeStart)),
+        timeEnd: formatLocalForServer(new Date(session.timeEnd)),
+        localTimezone: session.localTimezone
+      })
+    };
+
+    try {
+      const res = await fetch(`${process.env.SERVER_URL}/idle-time`, options);
+      if (!res.ok) throw new Error(await res.text());
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+
+  hasItems() {
+    return this.queue.length > 0;
+  }
+
+  itemCount() {
+    return this.queue.length;
+  }
+}
+
+const idleTimeQueue = new IdleTimeQueue();
+
+// Queue process function
+function initializeQueueProcessing() {
+  // Process queue immediately if there are items and we're online
+  processQueueIfNeeded();
+
+  // Set up periodic processing
+  const queueInterval = setInterval(processQueueIfNeeded, QUEUE_PROCESS_INTERVAL);
+
+  // Clean up on app quit
+  app.on('will-quit', async () => {
+    clearInterval(queueInterval);
+    await processQueueOnExit();
+  });
+}
+
+async function processQueueIfNeeded() {
+  if (shouldSkipQueueProcessing()) return;
+
+  isProcessingQueue = true;
+  try {
+    const online = await checkInternetConnection();
+    if (online && idleTimeQueue.hasItems()) {
+      //log(`🔄 Processing ${idleTimeQueue.itemCount()} queued idle sessions`);
+      await idleTimeQueue.processQueue();
+      lastQueueProcessTime = Date.now();
+      //log(`✅ Queue processed (${idleTimeQueue.itemCount()} remaining)`);
+    }
+  } catch (err) {
+    console.error('Queue processing error:', err);
+  } finally {
+    isProcessingQueue = false;
+  }
+}
+async function checkInternetConnection() {
+  return new Promise((resolve) => {
+    try {
+      const request = net.request({
+        method: 'HEAD',
+        url: 'https://www.google.com',
+        timeout: 5000
+      });
+      
+      request.on('response', () => {
+        request.abort();
+        resolve(true);
+      });
+      
+      request.on('error', () => resolve(false));
+      request.on('timeout', () => {
+        request.abort();
+        resolve(false);
+      });
+      
+      request.end();
+    } catch (err) {
+      console.error('Connection check error:', err);
+      resolve(false);
+    }
+  });
+}
+
+function shouldSkipQueueProcessing() {
+  const now = Date.now();
+  return (
+    isProcessingQueue ||
+    !currentUserId ||
+    !idleTimeQueue.hasItems() ||
+    (now - lastQueueProcessTime < MIN_PROCESS_INTERVAL)
+  );
+}
+
+async function processQueueOnExit() {
+  if (!currentUserId || isProcessingQueue) return;
+  
+  try {
+    const online = await checkInternetConnection();
+    if (online && idleTimeQueue.hasItems()) {
+      log(`🚪 Processing ${idleTimeQueue.itemCount()} items before exit...`);
+      await idleTimeQueue.processQueue();
+      log(`🏁 Exit processing completed (${idleTimeQueue.itemCount()} remaining)`);
+    }
+  } catch (err) {
+    console.error('Exit queue processing error:', err);
+  }
+}
+// Queue process function
+
+/* ─── Offline Queue helpers END ────────────────────────────────────────────────────── */
+
 
 // Session persistence
 function saveSession(userId, name) {
@@ -92,7 +299,7 @@ function createLoginWindow() {
     height: 300,
     resizable: true,
     frame: false,
-    alwaysOnTop: true,
+    //alwaysOnTop: true,
     skipTaskbar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -128,44 +335,53 @@ function toggleLoginWindow() {
   }
 }
 
-async function sendToServer(endpoint) {
+// Enhanced sendToServer with offline support
+async function sendToServer(endpoint, data = {}) {
   if (!currentUserId) {
     console.warn(`🔒 Skipped ${endpoint} — not logged in`);
-    return;
+    return { success: false, message: 'Not logged in' };
   }
 
   try {
-    const res = await fetch(`${process.env.SERVER_URL}/${endpoint}`, {
+    const options = {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'user-id': currentUserId
-      }
-    });
+      },
+      body: JSON.stringify(data),
+      timeout: 10000
+    };
 
-    const data = await res.json();
-
-    if (res.ok) {
-      console.log(`✅ ${endpoint}: ${data.message}`);
-    } else {
-      console.warn(`⚠️ ${endpoint} failed: ${data.message}`);
+    const res = await fetch(`${process.env.SERVER_URL}/${endpoint}`, options);
+    
+    if (!res.ok) {
+      const errorText = await res.text();
+      throw new Error(errorText || `HTTP error ${res.status}`);
     }
+    
+    const responseData = await res.json();
+    console.log(`✅ ${endpoint}: Success`);
+    return responseData;
   } catch (err) {
-    console.error(`❌ Failed to send ${endpoint}:`, err.message);
+    console.error(`❌ ${endpoint} failed:`, err.message);
+    throw err;
   }
 }
+// Helper function for fetch with timeout
+
 
 async function takeScreenshot() {
-  log('📸 Taking screenshot...');
+  //log('📸 Taking screenshot...');
   try {
     const imgBuf = await screenshot({ format: 'png' });
-    log('✅ Screenshot captured. Size:', imgBuf.length);
+    //log('✅ Screenshot captured. Size:', imgBuf.length);
 
     const buf = await sharp(imgBuf)
       .resize({ width: 1280 })
       .jpeg({ quality: 70, chromaSubsampling: '4:4:4', mozjpeg: true })
       .toBuffer();
-    log('✅ Screenshot compressed. Size:', buf.length);
+    //log('✅ Screenshot compressed. Size:', buf.length);
 
     const fileName = `scr_${Date.now()}.jpg`;
     const uploaded = await tryUploadToCloudinary(buf, fileName);
@@ -173,7 +389,7 @@ async function takeScreenshot() {
     if (!uploaded) {
       const filePath = path.join(queueDir, fileName);
       fs.writeFileSync(filePath, buf);
-      log('📦 Stored for retry:', fileName);
+      //log('📦 Stored for retry:', fileName);
     }
 
   } catch (e) {
@@ -234,34 +450,76 @@ async function retryQueuedScreenshots() {
   }
 }
 
+// Helper function to format local time for server
+function formatLocalForServer(date) {
+  const pad = num => String(num).padStart(2, '0');
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+  ].join('-') + ' ' + [
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds())
+  ].join(':');
+}
 
+
+
+
+
+let idleTimeCounter = 0; // Tracks idle time AFTER threshold is exceeded
+let thresholdExceededTime = null;
 function monitorActivity() {
   setInterval(async () => {
-    //console.log(`🧪 Idle threshold: ${parseInt(process.env.IDLE_THRESHOLD)}`);
-    log(`🧪 Idle threshold: ${parseInt(process.env.IDLE_THRESHOLD)}`);
-    if (!currentUserId) return;
+    try {
+      if (!currentUserId) return;
 
-    const idleTime = powerMonitor.getSystemIdleTime();
-    const now = Date.now();
+      const idleTime = powerMonitor.getSystemIdleTime();
+      const now = Date.now();
 
-    if (idleTime >= parseInt(process.env.IDLE_THRESHOLD)) {
-      if (!isOnBreak) {
-        await sendToServer('break-start');
-        isOnBreak = true;
-        log(`🧪 Break started`);
+      if (idleTime >= parseInt(process.env.IDLE_THRESHOLD)) {
+        if (!isOnBreak) {
+          // Start of new idle period
+          isOnBreak = true;
+          publishStatusUpdate('idle'); // <-- Add this line
+          thresholdExceededTime = now - (idleTime * 1000) + (parseInt(process.env.IDLE_THRESHOLD) * 1000);
+          idleTimeQueue.startNewSession(thresholdExceededTime);
+          
+          const localStartTime = new Date(thresholdExceededTime);
+          log(`🧪 Idle threshold exceeded at ${localStartTime.toLocaleString()}`);
+        }
+        
+        // Update current idle duration
+        idleTimeCounter = Math.floor((now - thresholdExceededTime) / 1000);
+      } else {
+        if (isOnBreak) {
+          // End of idle period
+          const finalIdleDuration = Math.floor((now - thresholdExceededTime) / 1000);
+          idleTimeCounter = finalIdleDuration;
+          
+          if (idleTimeCounter > 0) {
+            idleTimeQueue.completeSession(now, idleTimeCounter);
+          }
+          
+          // Reset for next idle period
+          isOnBreak = false;
+          publishStatusUpdate('active'); // <-- Add this line
+          idleTimeCounter = 0;
+          thresholdExceededTime = null;
+        }
       }
-    } else {
-      if (isOnBreak) {
-        await sendToServer('break-end');
-        isOnBreak = false;
+
+      if (now - lastScreenshot > parseInt(process.env.SCREENSHOT_INTERVAL)) {
+        await takeScreenshot();
+        lastScreenshot = now;
       }
-    }
-    if (now - lastScreenshot > parseInt(process.env.SCREENSHOT_INTERVAL)) {
-      await takeScreenshot();
-      lastScreenshot = now;
+    } catch (err) {
+      console.error('Activity monitor error:', err);
     }
   }, 30000);
 }
+
 
 
 
@@ -389,10 +647,11 @@ app.whenReady().then(() => {
   // Start monitoring
   createLoginWindow();
   monitorActivity();
+  initializeQueueProcessing();
 
   // Other listeners
-  powerMonitor.on('suspend', () => sendToServer('sleep'));
-  powerMonitor.on('resume', () => sendToServer('resume'));
+  // powerMonitor.on('suspend', () => sendToServer('sleep'));
+  // powerMonitor.on('resume', () => sendToServer('resume'));
 
   const backgroundWindow = new BrowserWindow({
     show: false,
@@ -422,6 +681,11 @@ app.whenReady().then(() => {
     if (response === 0) {
       autoUpdater.quitAndInstall();
     } else {
+      BrowserWindow.getAllWindows().forEach(win => {
+      if (win === loginWindow && win.isVisible()) {
+        win.setAlwaysOnTop(true);
+      }
+    });
       log('🕓 User chose to install later.');
     }
   });
