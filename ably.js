@@ -4,7 +4,7 @@ require('dotenv').config();
 let client = null;
 let presenceChannel = null;
 let userId = null;
-
+const SERVER_URL =process.env.SERVER_URL;
 function initPresence(id) {
   if (!id) return;
 
@@ -99,17 +99,44 @@ function leavePresence() {
   }
 }
 
+
+async function safeFetch(url, options) {
+  try {
+    const response = await fetch(url, options);
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Something went wrong');
+    return data;
+  } catch (err) {
+    console.error(`Error in ${url}:`, err);
+    status.textContent = err.message;
+    throw err;
+  }
+}
 // Update presence data with the new status
 async function publishStatusUpdate(status) {
   if (!presenceChannel || !client || client.connection.state !== 'connected') {
     console.warn(`⚠️ Ably not ready, cannot update presence status: ${status}`);
     return;
-  }
+  }    
 
   try {
     
+    const response = await safeFetch(`${SERVER_URL}/userStatus?user_id=${userId}`);
+    currentStatus = {
+      punchedIn: response.data.punchedIn,
+      onBreak: response.data.onBreak,
+    };
+    console.log(currentStatus);
+
+
     // Update the presence data for the current user
-    await presenceChannel.presence.update({ status });
+    if(status == 'idle'){
+      if(currentStatus.punchedIn === true && currentStatus.onBreak === false){
+        await presenceChannel.presence.update({ status });
+      }
+    }else{
+      await presenceChannel.presence.update({ status });
+    }
     console.log(`📢 Updated presence status to: ${status}`);
   } catch (err) {
     console.error(`❌ Failed to update presence status:`, err);
