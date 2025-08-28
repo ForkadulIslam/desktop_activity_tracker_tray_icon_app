@@ -8,6 +8,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppVersion: () => ipcRenderer.invoke('get-app-version')
 });
 contextBridge.exposeInMainWorld('env', {
-  SERVER_URL: 'http://52.7.213.112/api'
+  SERVER_URL: 'https://member.techvengersltd.com/api'
   //SERVER_URL: 'http://attendance.test/api'
 });
