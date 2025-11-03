@@ -19,13 +19,7 @@ require('dotenv').config({
   path: path.join(__dirname, '.env')
 });
 const { initPresence, leavePresence, publishStatusUpdate } = require('./ably');
-
-const cloudinary = require('cloudinary').v2;
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD,
-  api_key: process.env.CLOUDINARY_KEY,
-  api_secret: process.env.CLOUDINARY_SECRET
-});
+const googleDrive = require('./googleDrive.js');
 
 // Ensure proper installation path
 if (process.env.PORTABLE_EXECUTABLE_DIR) {
@@ -383,8 +377,19 @@ async function takeScreenshot() {
       .toBuffer();
     //log('✅ Screenshot compressed. Size:', buf.length);
 
-    const fileName = `scr_${Date.now()}.jpg`;
-    const uploaded = await tryUploadToCloudinary(buf, fileName);
+    const now = new Date();
+    const timestamp = now.getFullYear() +
+                      '-' + String(now.getMonth() + 1).padStart(2, '0') +
+                      '-' + String(now.getDate()).padStart(2, '0') +
+                      '_' + String(now.getHours()).padStart(2, '0') +
+                      '-' + String(now.getMinutes()).padStart(2, '0') +
+                      '-' + String(now.getSeconds()).padStart(2, '0');
+    
+    // Sanitize username to be filesystem-friendly
+    const safeUsername = (currentUserName || 'UNKNOWN_USER').replace(/[\\/\\:\\*\?"<>\|]/g, '_');
+
+    const fileName = `${safeUsername}_${timestamp}.jpg`;
+    const uploaded = await googleDrive.uploadScreenshot(buf, fileName);
 
     if (!uploaded) {
       const filePath = path.join(queueDir, fileName);
@@ -399,54 +404,43 @@ async function takeScreenshot() {
   retryQueuedScreenshots();
 }
 
-function tryUploadToCloudinary(buffer, publicId) {
-  return new Promise((resolve, reject) => {
-    const uploadStream = cloudinary.uploader.upload_stream(
-      {
-        resource_type: 'image',
-        folder: 'screenshots',
-        public_id: publicId.replace('.jpg', ''),
-        transformation: [{ quality: 'auto' }],
-        tags: ['auto-delete'],
-        context: {
-          user_id: currentUserId,
-          timestamp: Date.now() 
-        }
-      },
-      (err, result) => {
-        if (err) {
-          console.warn('⚠️ Cloudinary upload error:', err.message);
-          resolve(false);
-        } else {
-          console.log('✅ Uploaded to Cloudinary:', result.secure_url);
-          resolve(true);
-        }
-      }
-    );
-
-    // Pipe buffer into the Cloudinary stream
-    const stream = require('stream');
-    const bufferStream = new stream.PassThrough();
-    bufferStream.end(buffer);
-    bufferStream.pipe(uploadStream);
-  });
-}
-
+let isRetryingScreenshots = false;
 async function retryQueuedScreenshots() {
-  const files = fs.readdirSync(queueDir);
-  if (!files.length) return;
+  if (isRetryingScreenshots) {
+    // console.log('[Queue] Retry process already running, skipping.');
+    return;
+  }
 
-  for (const file of files) {
-    const filePath = path.join(queueDir, file);
-    const buf = fs.readFileSync(filePath);
-
-    const ok = await tryUploadToCloudinary(buf, file);
-    if (ok) {
-      fs.unlinkSync(filePath);
-      console.log('🧹 Removed from queue:', file);
-    } else {
-      break; // stop retrying if one fails (to avoid hammering)
+  isRetryingScreenshots = true;
+  try {
+    const files = fs.readdirSync(queueDir);
+    if (!files.length) {
+      return;
     }
+
+    // console.log(`[Queue] Retrying ${files.length} screenshots...`);
+    for (const file of files) {
+      const filePath = path.join(queueDir, file);
+      if (!fs.existsSync(filePath)) {
+          continue; // Skip if file is already gone
+      }
+      
+      try {
+        const buf = fs.readFileSync(filePath);
+        const ok = await googleDrive.uploadScreenshot(buf, file);
+        if (ok) {
+          fs.unlinkSync(filePath);
+          console.log('🧹 Removed from queue:', file);
+        } else {
+          console.log('[Queue] Upload failed, will retry later.');
+          break;
+        }
+      } catch (err) {
+        console.error(`[Queue] Error processing ${file}:`, err);
+      }
+    }
+  } finally {
+    isRetryingScreenshots = false;
   }
 }
 
@@ -564,6 +558,8 @@ app.whenReady().then(() => {
   tray.setToolTip('Activity Tracker');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Login Window', click: toggleLoginWindow },
+    { type: 'separator' },
+    { label: 'Login to Google Drive', click: () => googleDrive.authorize().catch(err => console.error(`Google Drive auth error: ${err.message}`)) },
     //{ label: 'Quit', click: () => app.quit() }
   ]));
   tray.on('click', toggleLoginWindow);
