@@ -401,7 +401,7 @@ async function takeScreenshot() {
     log('❌ Screenshot capture error:', e.message);
   }
 
-  retryQueuedScreenshots();
+  //retryQueuedScreenshots();
 }
 
 let isRetryingScreenshots = false;
@@ -559,7 +559,6 @@ app.whenReady().then(() => {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Login Window', click: toggleLoginWindow },
     { type: 'separator' },
-    { label: 'Login to Google Drive', click: () => googleDrive.authorize().catch(err => console.error(`Google Drive auth error: ${err.message}`)) },
     //{ label: 'Quit', click: () => app.quit() }
   ]));
   tray.on('click', toggleLoginWindow);
@@ -685,7 +684,11 @@ app.whenReady().then(() => {
       log('🕓 User chose to install later.');
     }
   });
-  autoUpdater.checkForUpdatesAndNotify();
+  //autoUpdater.checkForUpdatesAndNotify();
+
+  setInterval(function(){
+    autoUpdater.checkForUpdatesAndNotify();
+  },600000)
 
   retryQueuedScreenshots();
 
