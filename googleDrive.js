@@ -16,6 +16,7 @@ const SCOPES = ['https://www.googleapis.com/auth/drive'];
 
 let oauth2Client = null;
 let folderId = null;
+let authWindow = null; // Global to keep track of the auth window
 
 function getOAuth2Client() {
     if (!oauth2Client) {
@@ -50,20 +51,29 @@ function saveToken(token) {
 
 function authorize() {
     return new Promise(async (resolve, reject) => {
+        if (authWindow) {
+            authWindow.focus();
+            return reject(new Error('Authorization already in progress.'));
+        }
+
         let client = await loadToken();
         if (client) {
             return resolve(client);
         }
 
-        // If no token, get a new one
         const authUrl = getOAuth2Client().generateAuthUrl({
             access_type: 'offline',
             scope: SCOPES,
-            prompt: 'consent', // Important to get a refresh token
+            prompt: 'consent',
         });
 
-        const authWindow = new BrowserWindow({ width: 800, height: 600, show: true });
+        authWindow = new BrowserWindow({ width: 800, height: 600, show: true });
         authWindow.loadURL(authUrl);
+
+        authWindow.on('closed', () => {
+            authWindow = null;
+            reject(new Error('Authorization window closed by user.'));
+        });
 
         const onTitleChange = async (event, title) => {
             if (title.startsWith('Success code=')) {
@@ -90,7 +100,6 @@ function authorize() {
         };
 
         authWindow.webContents.on('page-title-updated', onTitleChange);
-        authWindow.on('closed', () => reject(new Error('Authorization window closed by user.')));
     });
 }
 
@@ -107,10 +116,20 @@ async function getFolderId(driveClient) {
     });
 
     if (response.data.files.length === 0) {
-        throw new Error(`Folder '${FOLDER_NAME}' not found in your Google Drive.`);
+        // Create the folder if it doesn't exist
+        const folderMetadata = {
+            name: FOLDER_NAME,
+            mimeType: 'application/vnd.google-apps.folder',
+        };
+        const file = await driveClient.files.create({
+            resource: folderMetadata,
+            fields: 'id',
+        });
+        folderId = file.data.id;
+    } else {
+        folderId = response.data.files[0].id;
     }
 
-    folderId = response.data.files[0].id;
     fs.writeFileSync(FOLDER_ID_PATH, JSON.stringify({ folderId }));
     return folderId;
 }
@@ -118,6 +137,9 @@ async function getFolderId(driveClient) {
 async function uploadScreenshot(buffer, fileName) {
     try {
         const authClient = await authorize();
+        if (!authClient) {
+            throw new Error('Login Required.');
+        }
         const drive = google.drive({ version: 'v3', auth: authClient });
         const parentFolderId = await getFolderId(drive);
 
@@ -141,7 +163,7 @@ async function uploadScreenshot(buffer, fileName) {
         return true;
     } catch (err) {
         console.error(`❌ Google Drive upload failed: ${err.message}`);
-        if (err.response && err.response.data.error === 'invalid_grant') {
+        if (err.message.includes('invalid_grant')) {
             console.log('Invalid token. Deleting stored token. Please log in again.');
             if (fs.existsSync(TOKEN_PATH)) fs.unlinkSync(TOKEN_PATH);
         }
