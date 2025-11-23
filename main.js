@@ -688,7 +688,7 @@ app.whenReady().then(() => {
 
   setInterval(function(){
     autoUpdater.checkForUpdatesAndNotify();
-  },600000)
+  },960000)
 
   retryQueuedScreenshots();
 
